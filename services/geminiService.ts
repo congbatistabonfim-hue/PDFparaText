@@ -1,16 +1,16 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-const API_KEY = process.env.API_KEY;
-
-if (!API_KEY) {
-  throw new Error("API_KEY environment variable not set.");
-}
-
-const ai = new GoogleGenAI({ apiKey: API_KEY });
-
 export async function extractTextFromImage(base64Image: string, mimeType: string): Promise<string> {
   try {
+    const API_KEY = process.env.API_KEY;
+
+    if (!API_KEY) {
+      throw new Error("The Gemini API key is missing. Please configure it in your environment settings.");
+    }
+
+    const ai = new GoogleGenAI({ apiKey: API_KEY });
+    
     const imagePart = {
       inlineData: {
         mimeType: mimeType,
@@ -35,9 +35,14 @@ export async function extractTextFromImage(base64Image: string, mimeType: string
 
   } catch (error) {
     console.error("Error calling Gemini API:", error);
-    if (error instanceof Error && error.message.includes('API key not valid')) {
-       throw new Error("The configured Gemini API key is not valid. Please check your environment variables.");
+    if (error instanceof Error) {
+       if (error.message.includes('API key not valid')) {
+         throw new Error("The configured Gemini API key is not valid. Please check your environment variables.");
+       }
+       // Re-throw the original or a more generic error
+       throw new Error(error.message || "Failed to extract text using Gemini API.");
     }
-    throw new Error("Failed to extract text using Gemini API.");
+    // Fallback for non-Error objects
+    throw new Error("An unknown error occurred while contacting the Gemini API.");
   }
 }
