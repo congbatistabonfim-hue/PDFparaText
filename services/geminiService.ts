@@ -24,6 +24,7 @@ export async function extractTextFromImage(base64Image: string, mimeType: string
 
   } catch (error) {
     console.error("Error calling Gemini API:", error);
-    throw new Error("Failed to extract text using the AI model.");
+    const originalMessage = error instanceof Error ? error.message : "An unknown AI error occurred";
+    throw new Error(`AI model interaction failed: ${originalMessage}`);
   }
 }

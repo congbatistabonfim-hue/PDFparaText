@@ -1,5 +1,4 @@
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
-import 'pdfjs-dist/build/pdf.worker.mjs';
 import type { PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api';
 import type { HybridPageResult } from '../types';
 
