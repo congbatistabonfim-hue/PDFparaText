@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, DragEvent } from 'react';
 import { UploadIcon } from './icons/UploadIcon';
 import { FileIcon } from './icons/FileIcon';
@@ -64,19 +63,19 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, onProcess,
       >
         <input
           type="file"
-          accept="image/png,image/jpeg,image/webp,application/pdf"
+          accept="application/pdf,image/png,image/jpeg,image/webp"
           onChange={handleInputChange}
           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
         />
         <div className="flex flex-col items-center justify-center text-center">
           <UploadIcon className="w-12 h-12 text-slate-400 dark:text-slate-500 mb-4" />
           <p className="font-semibold text-slate-700 dark:text-slate-300">
-            Drag & drop your image file here
+            Drag & drop your file here
           </p>
           <p className="text-slate-500 dark:text-slate-400 text-sm">
             or <span className="text-sky-500 font-medium">click to browse</span>
           </p>
-          <p className="text-xs text-slate-400 mt-2">PNG, JPG, WEBP accepted (PDFs are simulated)</p>
+          <p className="text-xs text-slate-400 mt-2">PDF, PNG, JPG, WEBP accepted (Max 200MB)</p>
         </div>
       </div>
 

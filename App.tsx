@@ -1,18 +1,12 @@
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { FileUpload } from './components/FileUpload';
 import { ResultsDisplay } from './components/ResultsDisplay';
 import { ProgressBar } from './components/ProgressBar';
 import { extractTextFromImage } from './services/geminiService';
 import { generateTxt, generateJson, generateHtml } from './utils/fileGenerator';
+import { processPdf } from './utils/pdfProcessor';
 import type { ProcessState, LogEntry, OutputFile, ExtractedPage } from './types';
 import { LogoIcon } from './components/icons/LogoIcon';
-
-const InfoBox: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-    <div className="mb-6 p-4 bg-sky-100 dark:bg-sky-900/50 border border-sky-300 dark:border-sky-700 text-sky-700 dark:text-sky-300 rounded-lg text-sm">
-        {children}
-    </div>
-);
 
 const App: React.FC = () => {
     const [file, setFile] = useState<File | null>(null);
@@ -25,24 +19,18 @@ const App: React.FC = () => {
     const addLog = (message: string, type: 'info' | 'success' | 'warning' = 'info') => {
         setLogs(prev => [...prev, { timestamp: new Date(), message, type }]);
     };
-    
-    // Clean up object URLs to prevent memory leaks
-    useEffect(() => {
-        return () => {
-            outputFiles.forEach(file => URL.revokeObjectURL(file.url));
-        };
-    }, [outputFiles]);
 
-
-    const resetState = () => {
-        // Revoking is handled by the useEffect cleanup function when outputFiles is set to []
+    const resetState = useCallback(() => {
+        // Clean up blob URLs to prevent memory leaks
+        outputFiles.forEach(f => URL.revokeObjectURL(f.url));
+        
         setFile(null);
         setProcessState('IDLE');
         setLogs([]);
         setExtractedPages([]);
         setOutputFiles([]);
         setError(null);
-    };
+    }, [outputFiles]);
 
     const handleFileProcess = useCallback(async () => {
         if (!file) {
@@ -50,64 +38,59 @@ const App: React.FC = () => {
             return;
         }
 
-        // Reset previous run state but keep file for display
-        setProcessState('UPLOADING');
+        // Reset previous results but keep the file for display
+        const currentFile = file;
+        setProcessState('IDLE');
         setLogs([]);
         setExtractedPages([]);
-        setOutputFiles([]); // This triggers useEffect to clean up old URLs
+        setOutputFiles([]);
         setError(null);
-        addLog(`Starting processing for "${file.name}".`);
+
+        setProcessState('UPLOADING');
+        addLog(`Starting processing for "${currentFile.name}".`);
 
         try {
-            // SIMULATION: This demo treats the uploaded file as an image for OCR.
-            // The PDF splitting logic is simulated for demonstration purposes.
-            
-            // Artificial delay to show progress
-            await new Promise(res => setTimeout(res, 500));
-            setProcessState('SPLITTING');
-            const fileSizeMB = file.size / (1024 * 1024);
+            let pageImages: string[] = [];
+            let imageMimeType: string = 'image/jpeg'; // PDF pages are converted to JPEG
 
-            if (fileSizeMB > 19) {
-                const parts = Math.ceil(fileSizeMB / 6);
-                addLog(`PDF size (${fileSizeMB.toFixed(2)}MB) > 19MB. Simulating split into ${parts} parts.`, 'info');
-            } else if (fileSizeMB >= 10) {
-                addLog(`PDF size (${fileSizeMB.toFixed(2)}MB) is between 10-19MB. Simulating split into 2 parts.`, 'info');
+            if (currentFile.type === 'application/pdf') {
+                setProcessState('SPLITTING');
+                addLog('Processing PDF: Converting pages to images for OCR...');
+                pageImages = await processPdf(currentFile);
+                addLog(`PDF processed. Found ${pageImages.length} pages.`, 'success');
+            } else if (currentFile.type.startsWith('image/')) {
+                addLog('Processing single image file.');
+                const reader = new FileReader();
+                reader.readAsDataURL(currentFile);
+                const base64Data = await new Promise<string>((resolve, reject) => {
+                    reader.onload = () => resolve(reader.result as string);
+                    reader.onerror = error => reject(error);
+                });
+                pageImages.push(base64Data.split(',')[1]);
+                imageMimeType = currentFile.type;
             } else {
-                addLog(`PDF size (${fileSizeMB.toFixed(2)}MB) < 10MB. Processing directly.`, 'info');
+                throw new Error('Unsupported file type. Please upload a PDF or an image file.');
             }
-            addLog('PDF split simulation complete.', 'success');
-
-
-            await new Promise(res => setTimeout(res, 500));
+            
             setProcessState('EXTRACTING');
-            if (!file.type.startsWith('image/')) {
-                 addLog('File is not an image. For this demo, an image is required to test OCR.', 'warning');
-                 throw new Error('This demonstration requires an image file to showcase the OCR functionality.');
+            addLog(`Extracting text from ${pageImages.length} page(s) using Gemini OCR...`);
+
+            const extractedContent: ExtractedPage[] = [];
+            for (let i = 0; i < pageImages.length; i++) {
+                addLog(`- Processing page ${i + 1} of ${pageImages.length}...`);
+                const text = await extractTextFromImage(pageImages[i], imageMimeType);
+                extractedContent.push({ pageNumber: i + 1, text: text || '[No text found on this page]' });
+                addLog(`  Page ${i + 1} extracted successfully.`, 'success');
+                setExtractedPages([...extractedContent]); // Update UI progressively
             }
+            addLog('All pages extracted.', 'success');
             
-            addLog('Converting image to base64 for processing...');
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            const base64Data = await new Promise<string>((resolve, reject) => {
-                reader.onload = () => resolve(reader.result as string);
-                reader.onerror = error => reject(error);
-            });
-            const base64Image = base64Data.split(',')[1];
-            
-            addLog('Applying intelligent OCR via Gemini API...');
-            const extractedText = await extractTextFromImage(base64Image, file.type);
-            const pages: ExtractedPage[] = [{ pageNumber: 1, text: extractedText }];
-            setExtractedPages(pages);
-            addLog('Text extraction successful.', 'success');
-
-
-            await new Promise(res => setTimeout(res, 500));
             setProcessState('GENERATING');
             addLog('Generating output files...');
             
-            const txtBlob = generateTxt(pages, 'saida');
-            const jsonBlob = generateJson(pages, 'saida');
-            const htmlBlob = generateHtml(pages, 'saida');
+            const txtBlob = generateTxt(extractedContent, 'saida');
+            const jsonBlob = generateJson(extractedContent, 'saida');
+            const htmlBlob = generateHtml(extractedContent, 'saida');
 
             setOutputFiles([
                 { name: 'saida.txt', url: URL.createObjectURL(txtBlob) },
@@ -116,7 +99,6 @@ const App: React.FC = () => {
             ]);
             addLog('Output files generated.', 'success');
             
-            await new Promise(res => setTimeout(res, 200));
             setProcessState('DONE');
             addLog('Processing complete!', 'success');
 
@@ -142,12 +124,7 @@ const App: React.FC = () => {
 
                 <main className="bg-white dark:bg-slate-800/50 rounded-2xl shadow-lg p-6 sm:p-8 border border-slate-200 dark:border-slate-700">
                     {processState === 'IDLE' && !extractedPages.length ? (
-                        <>
-                          <InfoBox>
-                              <p><strong className="font-semibold">Demonstration Mode:</strong> This app simulates PDF processing. To test the powerful OCR feature with the Gemini API, please upload an <strong>image file</strong> (e.g., PNG, JPG).</p>
-                          </InfoBox>
-                          <FileUpload onFileSelect={setFile} onProcess={handleFileProcess} initialFile={file} />
-                        </>
+                        <FileUpload onFileSelect={setFile} onProcess={handleFileProcess} initialFile={file} />
                     ) : (
                         <div>
                             <ProgressBar state={processState} />
