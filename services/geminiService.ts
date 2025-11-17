@@ -2,8 +2,6 @@ import { GoogleGenAI } from "@google/genai";
 
 export async function extractTextFromImage(base64Image: string, mimeType: string): Promise<string> {
   try {
-    // API Key is handled by the environment as per guidelines.
-    // Initialize the client here to ensure the latest API key from the environment is used.
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
     const imagePart = {
@@ -12,20 +10,20 @@ export async function extractTextFromImage(base64Image: string, mimeType: string
         data: base64Image,
       },
     };
+    
+    const textPart = {
+      text: "You are an expert OCR (Optical Character Recognition) system. Your task is to extract all text from the provided image with the highest possible accuracy.\n\nInstructions:\n1.  **Analyze Image Quality:** If the image quality is poor (e.g., low contrast, noisy, blurry), mentally apply enhancements like contrast adjustment, binarization, and noise reduction before extraction.\n2.  **Extract Text:** Extract all text content. Preserve original line breaks, spacing, and structure.\n3.  **Output:** Return only the raw, extracted text. Do not add any commentary, explanations, or formatting like markdown."
+    };
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-pro',
-      contents: { parts: [imagePart] },
-      config: {
-        systemInstruction: "You are an expert OCR (Optical Character Recognition) system. Extract all text from the provided image. Preserve the original line breaks, spacing, and structure with the highest possible accuracy. Do not add any commentary, explanations, or formatting like markdown. Return only the raw, extracted text.",
-      }
+      contents: { parts: [textPart, imagePart] },
     });
 
-    return response.text ?? ""; // Return empty string if text is null/undefined
+    return response.text ?? "";
 
   } catch (error) {
     console.error("Error calling Gemini API:", error);
-    // Let the caller handle the UI error display with a generic message.
     throw new Error("Failed to extract text using the AI model.");
   }
 }

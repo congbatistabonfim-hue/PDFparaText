@@ -1,4 +1,3 @@
-
 export type ProcessState = 'IDLE' | 'UPLOADING' | 'SPLITTING' | 'EXTRACTING' | 'GENERATING' | 'DONE';
 
 export interface LogEntry {
@@ -16,3 +15,7 @@ export interface OutputFile {
   name: string;
   url: string;
 }
+
+export type HybridPageResult = 
+  | { pageNumber: number; type: 'text'; content: string }
+  | { pageNumber: number; type: 'image'; content: string; mimeType: string };

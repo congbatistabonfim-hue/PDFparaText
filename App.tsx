@@ -1,12 +1,14 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { FileUpload } from './components/FileUpload';
 import { ResultsDisplay } from './components/ResultsDisplay';
 import { ProgressBar } from './components/ProgressBar';
 import { extractTextFromImage } from './services/geminiService';
 import { generateTxt, generateJson, generateHtml } from './utils/fileGenerator';
-import { processPdf } from './utils/pdfProcessor';
-import type { ProcessState, LogEntry, OutputFile, ExtractedPage } from './types';
+import { hybridProcessPdf } from './utils/pdfProcessor';
+import type { ProcessState, LogEntry, OutputFile, ExtractedPage, HybridPageResult } from './types';
 import { LogoIcon } from './components/icons/LogoIcon';
+import { getDocument } from 'pdfjs-dist';
+
 
 const App: React.FC = () => {
     const [file, setFile] = useState<File | null>(null);
@@ -21,9 +23,7 @@ const App: React.FC = () => {
     };
 
     const resetState = useCallback(() => {
-        // Clean up blob URLs to prevent memory leaks
         outputFiles.forEach(f => URL.revokeObjectURL(f.url));
-        
         setFile(null);
         setProcessState('IDLE');
         setLogs([]);
@@ -38,65 +38,117 @@ const App: React.FC = () => {
             return;
         }
 
-        // Reset previous results but keep the file for display
         const currentFile = file;
-        setProcessState('IDLE');
+        setProcessState('UPLOADING');
         setLogs([]);
         setExtractedPages([]);
         setOutputFiles([]);
         setError(null);
-
-        setProcessState('UPLOADING');
         addLog(`Starting processing for "${currentFile.name}".`);
 
         try {
-            let pageImages: string[] = [];
-            let imageMimeType: string = 'image/jpeg'; // PDF pages are converted to JPEG
+            let pageChunks: number[][] = [];
+            const allExtractedPages: ExtractedPage[] = [];
 
             if (currentFile.type === 'application/pdf') {
                 setProcessState('SPLITTING');
-                addLog('Processing PDF: Converting pages to images for OCR...');
-                pageImages = await processPdf(currentFile);
-                addLog(`PDF processed. Found ${pageImages.length} pages.`, 'success');
+                addLog('Analyzing PDF and preparing for processing...');
+                
+                const fileBuffer = await currentFile.arrayBuffer();
+                const pdfDocument = await getDocument({ data: fileBuffer }).promise;
+                const numPages = pdfDocument.numPages;
+
+                const MB = 1024 * 1024;
+                const fileSizeInMB = currentFile.size / MB;
+
+                if (fileSizeInMB < 10) {
+                    addLog('PDF size is under 10MB. Processing as a single part.');
+                    const allPages = Array.from({ length: numPages }, (_, i) => i + 1);
+                    pageChunks.push(allPages);
+                } else if (fileSizeInMB < 19) {
+                    addLog('PDF size is between 10MB and 19MB. Splitting into 2 parts.');
+                    const midPoint = Math.ceil(numPages / 2);
+                    const part1 = Array.from({ length: midPoint }, (_, i) => i + 1);
+                    const part2 = Array.from({ length: numPages - midPoint }, (_, i) => midPoint + i + 1);
+                    pageChunks.push(part1, part2);
+                } else {
+                    addLog('PDF size is over 19MB. Splitting into smaller parts.');
+                    const chunkSize = 15; // Process in chunks of 15 pages
+                    for (let i = 0; i < numPages; i += chunkSize) {
+                        const chunk = Array.from({ length: Math.min(chunkSize, numPages - i) }, (_, j) => i + j + 1);
+                        pageChunks.push(chunk);
+                    }
+                }
+                
+                addLog(`PDF will be processed in ${pageChunks.length} part(s).`);
+
+                const hybridResults: HybridPageResult[] = await hybridProcessPdf(pdfDocument);
+                
+                setProcessState('EXTRACTING');
+                addLog(`Extracting text from ${numPages} page(s) using Hybrid OCR...`);
+
+                const extractionPromises = hybridResults.map(result => {
+                    if (result.type === 'text') {
+                        addLog(`- Page ${result.pageNumber}: Direct text extracted.`, 'success');
+                        return Promise.resolve({ pageNumber: result.pageNumber, text: result.content });
+                    } else {
+                        addLog(`- Page ${result.pageNumber}: Requires AI OCR...`);
+                        return extractTextFromImage(result.content, result.mimeType)
+                            .then(text => {
+                                addLog(`  Page ${result.pageNumber} AI OCR successful.`, 'success');
+                                return { pageNumber: result.pageNumber, text: text || '[No text found]' };
+                            });
+                    }
+                });
+
+                const pageResults = await Promise.all(extractionPromises);
+                allExtractedPages.push(...pageResults.sort((a, b) => a.pageNumber - b.pageNumber));
+                setExtractedPages(allExtractedPages);
+
             } else if (currentFile.type.startsWith('image/')) {
                 addLog('Processing single image file.');
+                pageChunks.push([1]); // Single chunk for a single image
+                
+                setProcessState('EXTRACTING');
                 const reader = new FileReader();
                 reader.readAsDataURL(currentFile);
                 const base64Data = await new Promise<string>((resolve, reject) => {
                     reader.onload = () => resolve(reader.result as string);
                     reader.onerror = error => reject(error);
                 });
-                pageImages.push(base64Data.split(',')[1]);
-                imageMimeType = currentFile.type;
+                
+                const text = await extractTextFromImage(base64Data.split(',')[1], currentFile.type);
+                allExtractedPages.push({ pageNumber: 1, text: text || '[No text found]' });
+                setExtractedPages(allExtractedPages);
+
             } else {
                 throw new Error('Unsupported file type. Please upload a PDF or an image file.');
             }
             
-            setProcessState('EXTRACTING');
-            addLog(`Extracting text from ${pageImages.length} page(s) using Gemini OCR...`);
-
-            const extractedContent: ExtractedPage[] = [];
-            for (let i = 0; i < pageImages.length; i++) {
-                addLog(`- Processing page ${i + 1} of ${pageImages.length}...`);
-                const text = await extractTextFromImage(pageImages[i], imageMimeType);
-                extractedContent.push({ pageNumber: i + 1, text: text || '[No text found on this page]' });
-                addLog(`  Page ${i + 1} extracted successfully.`, 'success');
-                setExtractedPages([...extractedContent]); // Update UI progressively
-            }
             addLog('All pages extracted.', 'success');
             
             setProcessState('GENERATING');
             addLog('Generating output files...');
             
-            const txtBlob = generateTxt(extractedContent, 'saida');
-            const jsonBlob = generateJson(extractedContent, 'saida');
-            const htmlBlob = generateHtml(extractedContent, 'saida');
+            const finalOutputFiles: OutputFile[] = [];
+            const isMultiPart = pageChunks.length > 1;
 
-            setOutputFiles([
-                { name: 'saida.txt', url: URL.createObjectURL(txtBlob) },
-                { name: 'saida.json', url: URL.createObjectURL(jsonBlob) },
-                { name: 'saida.html', url: URL.createObjectURL(htmlBlob) },
-            ]);
+            pageChunks.forEach((chunk, index) => {
+                const baseName = isMultiPart ? `part${index + 1}_saida` : 'saida';
+                const chunkPages = allExtractedPages.filter(p => chunk.includes(p.pageNumber));
+                
+                const txtBlob = generateTxt(chunkPages, baseName);
+                const jsonBlob = generateJson(chunkPages, baseName);
+                const htmlBlob = generateHtml(chunkPages, baseName);
+                
+                finalOutputFiles.push(
+                    { name: `${baseName}.txt`, url: URL.createObjectURL(txtBlob) },
+                    { name: `${baseName}.json`, url: URL.createObjectURL(jsonBlob) },
+                    { name: `${baseName}.html`, url: URL.createObjectURL(htmlBlob) }
+                );
+            });
+
+            setOutputFiles(finalOutputFiles);
             addLog('Output files generated.', 'success');
             
             setProcessState('DONE');
@@ -133,7 +185,7 @@ const App: React.FC = () => {
                                 logs={logs}
                                 outputFiles={outputFiles}
                                 onReset={resetState}
-                                isProcessing={processState !== 'DONE'}
+                                isProcessing={processState !== 'DONE' && processState !== 'IDLE'}
                             />
                         </div>
                     )}
