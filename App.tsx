@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { FileUpload } from './components/FileUpload';
 import { ResultsDisplay } from './components/ResultsDisplay';
 import { ProgressBar } from './components/ProgressBar';
@@ -15,6 +15,7 @@ const App: React.FC = () => {
     const [extractedPages, setExtractedPages] = useState<ExtractedPage[]>([]);
     const [outputFiles, setOutputFiles] = useState<OutputFile[]>([]);
     const [error, setError] = useState<string | null>(null);
+    const simulationWarningShown = useRef(false);
 
     const addLog = useCallback((message: string, type: 'info' | 'success' | 'warning' = 'info') => {
         setLogs(prev => [...prev, { timestamp: new Date(), message, type }]);
@@ -28,6 +29,7 @@ const App: React.FC = () => {
         setExtractedPages([]);
         setOutputFiles([]);
         setError(null);
+        simulationWarningShown.current = false;
     }, [outputFiles]);
 
     const handleFileProcess = useCallback(async () => {
@@ -42,6 +44,7 @@ const App: React.FC = () => {
         setExtractedPages([]);
         setOutputFiles([]);
         setError(null);
+        simulationWarningShown.current = false;
         addLog(`Starting processing for "${currentFile.name}".`);
 
         try {
@@ -82,8 +85,6 @@ const App: React.FC = () => {
                 setProcessState('EXTRACTING');
                 addLog(`Extracting text from ${numPages} page(s) using Hybrid OCR...`);
 
-                let simulationWarningShown = false;
-
                 const extractionPromises = hybridResults.map(result => {
                     if (result.type === 'text') {
                         addLog(`- Page ${result.pageNumber}: Direct text extracted.`, 'success');
@@ -92,9 +93,9 @@ const App: React.FC = () => {
                         addLog(`- Page ${result.pageNumber}: Requires AI OCR...`);
                         return extractTextFromImage(result.content, result.mimeType)
                             .then(ocrResult => {
-                                if (ocrResult.simulated && !simulationWarningShown) {
+                                if (ocrResult.simulated && !simulationWarningShown.current) {
                                     addLog('API Key not set in environment. Using simulated OCR results.', 'warning');
-                                    simulationWarningShown = true;
+                                    simulationWarningShown.current = true;
                                 }
                                 addLog(`  Page ${result.pageNumber} AI OCR successful.`, 'success');
                                 return { pageNumber: result.pageNumber, text: ocrResult.text || '[No text found]' };

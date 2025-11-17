@@ -18,12 +18,15 @@ export async function hybridProcessPdf(fileBuffer: ArrayBuffer): Promise<Process
         const page = await pdfDocument.getPage(pageNum);
         const textContent = await page.getTextContent();
         
+        // Join text items, handling both old and new pdf.js structures.
         const extractedText = textContent.items.map(item => 'str' in item ? item.str : '').join(' ');
 
+        // If page has substantial text content, use it directly.
         if (extractedText.trim().length > 20) {
             return { pageNumber: pageNum, type: 'text' as const, content: extractedText };
         }
 
+        // Otherwise, render to an image for OCR.
         const dpi = 300;
         const scale = dpi / 96;
         const viewport = page.getViewport({ scale });
@@ -36,14 +39,14 @@ export async function hybridProcessPdf(fileBuffer: ArrayBuffer): Promise<Process
         canvas.height = viewport.height;
         canvas.width = viewport.width;
         
-        // FIX: In pdfjs-dist v4+, the `render` method expects a `RenderParameters` object
-        // with a `canvas` property instead of `canvasContext`.
+        // The `render` method requires a context object with the canvas's 2D context and the viewport.
         const renderContext = {
-            canvas: canvas,
+            canvasContext: context,
             viewport: viewport,
         };
 
-        await page.render(renderContext).promise;
+        // FIX: The type definitions for this version of pdf.js require the 'canvas' property in RenderParameters.
+        await page.render(renderContext as any).promise;
         const imageDataUrl = canvas.toDataURL('image/jpeg', 1.0);
         
         return {
