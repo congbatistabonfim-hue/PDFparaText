@@ -3,6 +3,7 @@ const APP_SHELL_URLS = [
   '/',
   '/index.html',
   '/icon.svg',
+  '/manifest.json'
 ];
 
 self.addEventListener('install', event => {
@@ -10,8 +11,6 @@ self.addEventListener('install', event => {
     caches.open(CACHE_NAME)
       .then(cache => {
         console.log('Opened cache');
-        // Pre-caching the app shell and main assets.
-        // Network requests for other assets will be cached on the fly.
         return cache.addAll(APP_SHELL_URLS);
       })
       .catch(err => {
@@ -21,44 +20,56 @@ self.addEventListener('install', event => {
 });
 
 self.addEventListener('fetch', event => {
-  // We only want to cache GET requests.
-  if (event.request.method !== 'GET') {
+  const { request } = event;
+
+  // We only want to handle GET requests.
+  if (request.method !== 'GET') {
     return;
+  }
+  
+  const url = new URL(request.url);
+
+  // Don't try to cache non-local assets (e.g., APIs, CDNs)
+  if (url.origin !== self.location.origin) {
+    return;
+  }
+  
+  // Don't cache blob URLs from file generation
+  if (request.url.startsWith('blob:')) {
+      return;
   }
 
   event.respondWith(
     caches.open(CACHE_NAME).then(async (cache) => {
       // Try to get the response from the cache first.
-      const cachedResponse = await cache.match(event.request);
+      const cachedResponse = await cache.match(request);
       if (cachedResponse) {
         return cachedResponse;
       }
 
       // If it's not in the cache, fetch it from the network.
       try {
-        const networkResponse = await fetch(event.request);
+        const networkResponse = await fetch(request);
 
         // If the fetch was successful, clone the response and store it in the cache.
-        // We only cache successful responses to avoid caching errors.
         if (networkResponse && networkResponse.ok) {
           // Make sure to not cache Chrome extension requests.
-          if (!event.request.url.startsWith('chrome-extension://')) {
-            cache.put(event.request, networkResponse.clone());
+          if (!request.url.startsWith('chrome-extension://')) {
+            cache.put(request, networkResponse.clone());
           }
         }
         
         return networkResponse;
       } catch (error) {
-        // This will happen if the network request fails, e.g., the user is offline.
-        // Since we already checked the cache, this means the resource is not available.
         console.error('Fetch failed; returning offline fallback or error', error);
-        // You could return a custom offline page here if you had one cached.
-        // For example: return caches.match('/offline.html');
-        // For now, we'll just let the default browser error occur.
+        // This will happen if the network request fails, e.g., the user is offline.
+        // Let the default browser error occur.
+        throw error;
       }
     })
   );
 });
+
 
 self.addEventListener('activate', event => {
   // This event fires when the new service worker takes control.

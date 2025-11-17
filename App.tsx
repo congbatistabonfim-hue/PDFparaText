@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { FileUpload } from './components/FileUpload';
 import { ResultsDisplay } from './components/ResultsDisplay';
 import { ProgressBar } from './components/ProgressBar';
@@ -7,6 +7,12 @@ import { extractTextFromImage } from './services/geminiService';
 import { generateTxt, generateJson, generateHtml } from './utils/fileGenerator';
 import type { ProcessState, LogEntry, OutputFile, ExtractedPage } from './types';
 import { LogoIcon } from './components/icons/LogoIcon';
+
+const InfoBox: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+    <div className="mb-6 p-4 bg-sky-100 dark:bg-sky-900/50 border border-sky-300 dark:border-sky-700 text-sky-700 dark:text-sky-300 rounded-lg text-sm">
+        {children}
+    </div>
+);
 
 const App: React.FC = () => {
     const [file, setFile] = useState<File | null>(null);
@@ -19,8 +25,17 @@ const App: React.FC = () => {
     const addLog = (message: string, type: 'info' | 'success' | 'warning' = 'info') => {
         setLogs(prev => [...prev, { timestamp: new Date(), message, type }]);
     };
+    
+    // Clean up object URLs to prevent memory leaks
+    useEffect(() => {
+        return () => {
+            outputFiles.forEach(file => URL.revokeObjectURL(file.url));
+        };
+    }, [outputFiles]);
+
 
     const resetState = () => {
+        // Revoking is handled by the useEffect cleanup function when outputFiles is set to []
         setFile(null);
         setProcessState('IDLE');
         setLogs([]);
@@ -35,17 +50,19 @@ const App: React.FC = () => {
             return;
         }
 
-        resetState();
-        setFile(file); // Keep file for display
+        // Reset previous run state but keep file for display
         setProcessState('UPLOADING');
-        addLog(`Starting processing for "${file.name}".`);
+        setLogs([]);
+        setExtractedPages([]);
+        setOutputFiles([]); // This triggers useEffect to clean up old URLs
         setError(null);
+        addLog(`Starting processing for "${file.name}".`);
 
         try {
-            // SIMULATION: Because we cannot process PDFs in the browser securely,
-            // we will treat the uploaded file as a single-page image for OCR demonstration.
-            // The logic for splitting is simulated via logs.
+            // SIMULATION: This demo treats the uploaded file as an image for OCR.
+            // The PDF splitting logic is simulated for demonstration purposes.
             
+            // Artificial delay to show progress
             await new Promise(res => setTimeout(res, 500));
             setProcessState('SPLITTING');
             const fileSizeMB = file.size / (1024 * 1024);
@@ -64,8 +81,8 @@ const App: React.FC = () => {
             await new Promise(res => setTimeout(res, 500));
             setProcessState('EXTRACTING');
             if (!file.type.startsWith('image/')) {
-                 addLog('File is not an image. For this demo, please upload an image to simulate OCR.', 'warning');
-                 throw new Error('This demo requires an image file to showcase the OCR functionality.');
+                 addLog('File is not an image. For this demo, an image is required to test OCR.', 'warning');
+                 throw new Error('This demonstration requires an image file to showcase the OCR functionality.');
             }
             
             addLog('Converting image to base64 for processing...');
@@ -125,7 +142,12 @@ const App: React.FC = () => {
 
                 <main className="bg-white dark:bg-slate-800/50 rounded-2xl shadow-lg p-6 sm:p-8 border border-slate-200 dark:border-slate-700">
                     {processState === 'IDLE' && !extractedPages.length ? (
-                        <FileUpload onFileSelect={setFile} onProcess={handleFileProcess} initialFile={file} />
+                        <>
+                          <InfoBox>
+                              <p><strong className="font-semibold">Demonstration Mode:</strong> This app simulates PDF processing. To test the powerful OCR feature with the Gemini API, please upload an <strong>image file</strong> (e.g., PNG, JPG).</p>
+                          </InfoBox>
+                          <FileUpload onFileSelect={setFile} onProcess={handleFileProcess} initialFile={file} />
+                        </>
                     ) : (
                         <div>
                             <ProgressBar state={processState} />
