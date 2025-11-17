@@ -1,6 +1,11 @@
 import { GoogleGenAI } from "@google/genai";
 
-export async function extractTextFromImage(base64Image: string, mimeType: string): Promise<string> {
+export interface OcrResult {
+  text: string;
+  simulated: boolean;
+}
+
+export async function extractTextFromImage(base64Image: string, mimeType: string): Promise<OcrResult> {
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
@@ -20,11 +25,20 @@ export async function extractTextFromImage(base64Image: string, mimeType: string
       contents: { parts: [textPart, imagePart] },
     });
 
-    return response.text ?? "";
+    return { text: response.text ?? "", simulated: false };
 
   } catch (error) {
     console.error("Error calling Gemini API:", error);
     const originalMessage = error instanceof Error ? error.message : "An unknown AI error occurred";
+    
+    if (originalMessage.includes("API Key must be set")) {
+        console.warn("Gemini API key not found. Falling back to simulated response.");
+        return {
+            text: `[API Key not configured. This is a simulated OCR response for the image content.]`,
+            simulated: true,
+        };
+    }
+
     throw new Error(`AI model interaction failed: ${originalMessage}`);
   }
 }

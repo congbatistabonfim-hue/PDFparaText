@@ -1,20 +1,15 @@
-// FIX: The `RenderParameters` type is not exported from the main `pdfjs-dist` module in recent versions.
-// The type has been removed from the import, and the explicit type annotation for `renderContext` is also removed
-// to rely on TypeScript's structural typing, which resolves the error.
-import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy } from 'pdfjs-dist';
+import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import type { HybridPageResult } from '../types';
 
-// Set worker source to a reliable CDN to ensure it's loaded correctly.
 GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@4.4.168/build/pdf.worker.mjs';
 
-/**
- * Processes each page of a PDF using a hybrid approach:
- * 1. Tries to extract text directly.
- * 2. If direct extraction yields insufficient text, renders the page as a high-res image.
- * @param pdfDocument The PDF document proxy object from pdf.js.
- * @returns A promise that resolves to an array of HybridPageResult objects.
- */
-export async function hybridProcessPdf(pdfDocument: PDFDocumentProxy): Promise<HybridPageResult[]> {
+interface ProcessedPdf {
+    hybridResults: HybridPageResult[];
+    numPages: number;
+}
+
+export async function hybridProcessPdf(fileBuffer: ArrayBuffer): Promise<ProcessedPdf> {
+    const pdfDocument = await getDocument({ data: fileBuffer }).promise;
     const numPages = pdfDocument.numPages;
     
     const pageNumbers = Array.from({ length: numPages }, (_, i) => i + 1);
@@ -25,12 +20,10 @@ export async function hybridProcessPdf(pdfDocument: PDFDocumentProxy): Promise<H
         
         const extractedText = textContent.items.map(item => 'str' in item ? item.str : '').join(' ');
 
-        // If text is substantial, use it directly. Otherwise, render an image.
-        if (extractedText.trim().length > 20) { // Threshold for "sufficient" text
+        if (extractedText.trim().length > 20) {
             return { pageNumber: pageNum, type: 'text' as const, content: extractedText };
         }
 
-        // Fallback to rendering the page as an image
         const dpi = 300;
         const scale = dpi / 96;
         const viewport = page.getViewport({ scale });
@@ -43,8 +36,10 @@ export async function hybridProcessPdf(pdfDocument: PDFDocumentProxy): Promise<H
         canvas.height = viewport.height;
         canvas.width = viewport.width;
         
+        // FIX: In pdfjs-dist v4+, the `render` method expects a `RenderParameters` object
+        // with a `canvas` property instead of `canvasContext`.
         const renderContext = {
-            canvasContext: context,
+            canvas: canvas,
             viewport: viewport,
         };
 
@@ -59,5 +54,6 @@ export async function hybridProcessPdf(pdfDocument: PDFDocumentProxy): Promise<H
         };
     });
 
-    return Promise.all(processingPromises);
+    const hybridResults = await Promise.all(processingPromises);
+    return { hybridResults, numPages };
 }

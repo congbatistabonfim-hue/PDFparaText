@@ -5,10 +5,8 @@ import { ProgressBar } from './components/ProgressBar';
 import { extractTextFromImage } from './services/geminiService';
 import { generateTxt, generateJson, generateHtml } from './utils/fileGenerator';
 import { hybridProcessPdf } from './utils/pdfProcessor';
-import type { ProcessState, LogEntry, OutputFile, ExtractedPage, HybridPageResult } from './types';
+import type { ProcessState, LogEntry, OutputFile, ExtractedPage } from './types';
 import { LogoIcon } from './components/icons/LogoIcon';
-import { getDocument } from 'pdfjs-dist';
-
 
 const App: React.FC = () => {
     const [file, setFile] = useState<File | null>(null);
@@ -55,8 +53,7 @@ const App: React.FC = () => {
                 addLog('Analyzing PDF and preparing for processing...');
                 
                 const fileBuffer = await currentFile.arrayBuffer();
-                const pdfDocument = await getDocument({ data: fileBuffer }).promise;
-                const numPages = pdfDocument.numPages;
+                const { hybridResults, numPages } = await hybridProcessPdf(fileBuffer);
 
                 const MB = 1024 * 1024;
                 const fileSizeInMB = currentFile.size / MB;
@@ -82,10 +79,10 @@ const App: React.FC = () => {
                 
                 addLog(`PDF will be processed in ${pageChunks.length} part(s).`);
 
-                const hybridResults: HybridPageResult[] = await hybridProcessPdf(pdfDocument);
-                
                 setProcessState('EXTRACTING');
                 addLog(`Extracting text from ${numPages} page(s) using Hybrid OCR...`);
+
+                let simulationWarningShown = false;
 
                 const extractionPromises = hybridResults.map(result => {
                     if (result.type === 'text') {
@@ -94,9 +91,13 @@ const App: React.FC = () => {
                     } else {
                         addLog(`- Page ${result.pageNumber}: Requires AI OCR...`);
                         return extractTextFromImage(result.content, result.mimeType)
-                            .then(text => {
+                            .then(ocrResult => {
+                                if (ocrResult.simulated && !simulationWarningShown) {
+                                    addLog('API Key not set in environment. Using simulated OCR results.', 'warning');
+                                    simulationWarningShown = true;
+                                }
                                 addLog(`  Page ${result.pageNumber} AI OCR successful.`, 'success');
-                                return { pageNumber: result.pageNumber, text: text || '[No text found]' };
+                                return { pageNumber: result.pageNumber, text: ocrResult.text || '[No text found]' };
                             });
                     }
                 });
@@ -117,8 +118,11 @@ const App: React.FC = () => {
                     reader.onerror = error => reject(error);
                 });
                 
-                const text = await extractTextFromImage(base64Data.split(',')[1], currentFile.type);
-                allExtractedPages.push({ pageNumber: 1, text: text || '[No text found]' });
+                const ocrResult = await extractTextFromImage(base64Data.split(',')[1], currentFile.type);
+                if (ocrResult.simulated) {
+                    addLog('API Key not set in environment. Using simulated OCR results.', 'warning');
+                }
+                allExtractedPages.push({ pageNumber: 1, text: ocrResult.text || '[No text found]' });
                 setExtractedPages(allExtractedPages);
 
             } else {
