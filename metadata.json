@@ -1,0 +1,5 @@
+{
+  "name": "Copy of PDF Text Extractor Pro",
+  "description": "An intelligent application to upload PDFs, split them based on size, and perform advanced OCR to extract text. It allows exporting the content into TXT, JSON, and HTML formats, maintaining the original page structure.",
+  "requestFramePermissions": []
+}

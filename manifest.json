@@ -1,0 +1,16 @@
+{
+  "short_name": "PDF Extractor",
+  "name": "PDF Text Extractor Pro",
+  "description": "An intelligent application to upload PDFs, split them based on size, and perform advanced OCR to extract text. It allows exporting the content into TXT, JSON, and HTML formats, maintaining the original page structure.",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#0ea5e9",
+  "background_color": "#f8fafc"
+}
