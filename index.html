@@ -2,8 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f172a" />
+    <link rel="manifest" href="/manifest.json" />
     <title>PDF Text Extractor Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -22,8 +24,7 @@
     "react/": "https://aistudiocdn.com/react@^19.2.0/",
     "@google/genai": "https://aistudiocdn.com/@google/genai@^1.29.1",
     "pdfjs-dist": "https://unpkg.com/pdfjs-dist@4.4.168/build/pdf.mjs",
-    "pdfjs-dist/build/pdf.worker.mjs": "https://unpkg.com/pdfjs-dist@4.4.168/build/pdf.worker.mjs",
-    "pdfjs-dist/": "https://aistudiocdn.com/pdfjs-dist@^5.4.394/"
+    "pdfjs-dist/build/pdf.worker.mjs": "https://unpkg.com/pdfjs-dist@4.4.168/build/pdf.worker.mjs"
   }
 }
 </script>
@@ -31,5 +32,16 @@
   <body class="bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').then(registration => {
+            console.log('ServiceWorker registration successful with scope: ', registration.scope);
+          }, err => {
+            console.log('ServiceWorker registration failed: ', err);
+          });
+        });
+      }
+    </script>
   </body>
 </html>

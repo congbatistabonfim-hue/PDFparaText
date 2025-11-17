@@ -18,9 +18,9 @@ const App: React.FC = () => {
     const [outputFiles, setOutputFiles] = useState<OutputFile[]>([]);
     const [error, setError] = useState<string | null>(null);
 
-    const addLog = (message: string, type: 'info' | 'success' | 'warning' = 'info') => {
+    const addLog = useCallback((message: string, type: 'info' | 'success' | 'warning' = 'info') => {
         setLogs(prev => [...prev, { timestamp: new Date(), message, type }]);
-    };
+    }, []);
 
     const resetState = useCallback(() => {
         outputFiles.forEach(f => URL.revokeObjectURL(f.url));
@@ -161,7 +161,7 @@ const App: React.FC = () => {
             setProcessState('IDLE');
         }
 
-    }, [file]);
+    }, [file, addLog]);
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 p-4 sm:p-6 lg:p-8">
